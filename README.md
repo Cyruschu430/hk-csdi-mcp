@@ -55,6 +55,17 @@ Inside a coding agent (Claude Code, Cursor) the model can `curl` that URL into t
 the analysis in Python; inside a chat client, open the URL and save the file. Both routes keep the
 feature payload out of the model's context, which is the point.
 
+**ArcGIS Pro.** `slice_hk_data` returns a plain GeoJSON `FeatureCollection` (EPSG:4326), so a Pro
+user — or an assistant that can run arcpy — gets a feature class in two lines:
+
+```python
+import arcpy
+arcpy.conversion.JSONToFeatures("slice.geojson", r"memory\csdi_slice", geometry_type="POINT")
+```
+
+or drag the `download_url` file straight onto the map. Field names are the published ones, so the
+column `summarise_hk_data` groups by is the same column in the attribute table.
+
 When the analysis happens *inside* the conversation, don't download at all — ask for a slice:
 
 ```text

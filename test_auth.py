@@ -95,8 +95,8 @@ async def main() -> int:
                                                        "clientInfo": {"name": "t", "version": "0"}},
                                 extra=auth)
             assert init.status_code == 200, init.text
+            # stateless by default: no session id is issued, and none is required
             session = init.headers.get("mcp-session-id")
-            assert session, "no Mcp-Session-Id issued"
 
             listed, payload = await rpc(c, url, "tools/list", {}, session=session, extra=auth)
             names = {t["name"] for t in payload["result"]["tools"]}
