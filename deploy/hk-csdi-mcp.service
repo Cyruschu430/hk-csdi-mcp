@@ -16,7 +16,8 @@ Environment=HK_CSDI_PORT=8788
 Environment=HK_CSDI_PATH=/mcp
 Environment=HK_CSDI_DIR=/var/lib/hk-csdi-mcp/work
 Environment=HK_CSDI_TOKENS=/var/lib/hk-csdi-mcp/tokens.json
-Environment=HK_CSDI_PUBLIC_URL=https://csdi-mcp.161.118.212.211.sslip.io
+Environment=HK_CSDI_PUBLIC_URL=https://mcp.example.com
+Environment=HK_CSDI_ALLOWED_HOSTS=mcp.example.com,127.0.0.1:8788
 Environment=HK_CSDI_RPM=60
 Environment=HK_CSDI_LOADS_PER_HOUR=30
 Environment=HK_CSDI_STALE_DAYS=30
