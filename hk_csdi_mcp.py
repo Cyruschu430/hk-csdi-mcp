@@ -872,7 +872,17 @@ def main() -> None:
     if not _read_tokens():
         raise SystemExit(f"refusing to serve HTTP with no tokens: {TOKENS} is empty — "
                          f"run `python3 {sys.argv[0]} --add-token <name>` first")
-    server.run("streamable-http", host=host, port=port, streamable_http_path=path)
+    # The transport rejects unknown Host headers (DNS-rebinding guard), so the public name has
+    # to be declared. HK_CSDI_PUBLIC_URL covers the deployed hostname; add extras with
+    # HK_CSDI_ALLOWED_HOSTS (comma-separated host[:port]).
+    from mcp.server.transport_security import TransportSecuritySettings
+    netloc = urllib.parse.urlparse(public).netloc
+    allowed = [h.strip() for h in (os.environ.get("HK_CSDI_ALLOWED_HOSTS") or "").split(",") if h.strip()]
+    allowed += [h for h in (netloc, f"127.0.0.1:{port}", f"localhost:{port}") if h]
+    server.run("streamable-http", host=host, port=port, streamable_http_path=path,
+               transport_security=TransportSecuritySettings(
+                   enable_dns_rebinding_protection=True,
+                   allowed_hosts=list(dict.fromkeys(allowed))))
 
 
 if __name__ == "__main__":

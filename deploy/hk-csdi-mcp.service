@@ -1,0 +1,33 @@
+[Unit]
+Description=hk-csdi-mcp — Hong Kong CSDI data over MCP (streamable HTTP)
+Documentation=https://github.com/Cyruschu430/hk-csdi-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/hk-csdi-mcp
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HK_CSDI_TRANSPORT=streamable-http
+Environment=HK_CSDI_HOST=127.0.0.1
+Environment=HK_CSDI_PORT=8788
+Environment=HK_CSDI_PATH=/mcp
+Environment=HK_CSDI_DIR=/var/lib/hk-csdi-mcp/work
+Environment=HK_CSDI_TOKENS=/var/lib/hk-csdi-mcp/tokens.json
+Environment=HK_CSDI_PUBLIC_URL=https://csdi-mcp.161.118.212.211.sslip.io
+Environment=HK_CSDI_RPM=60
+Environment=HK_CSDI_LOADS_PER_HOUR=30
+Environment=HK_CSDI_STALE_DAYS=30
+ExecStart=/opt/hk-csdi-mcp/.venv/bin/python hk_csdi_mcp.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hk-csdi-mcp
+
+[Install]
+WantedBy=multi-user.target

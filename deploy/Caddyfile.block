@@ -1,0 +1,21 @@
+# hk-csdi-mcp — remote MCP endpoint (streamable HTTP) behind systemd.
+# Append to /etc/caddy/Caddyfile, then: sudo caddy validate && sudo systemctl reload caddy
+# SSE + streamed tool results need buffering off and long timeouts.
+csdi-mcp.161.118.212.211.sslip.io {
+	reverse_proxy 127.0.0.1:8788 {
+		flush_interval -1
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	log {
+		output file /var/log/caddy/hk-csdi-mcp.log
+		level INFO
+	}
+}
