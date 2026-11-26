@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hk-csdi-mcp"
+version = "0.1.0"
+description = "MCP server for Hong Kong CSDI spatial data: search 1,150+ official datasets, read rows, aggregate, spatial join — local or remote with bearer tokens"
+requires-python = ">=3.10"
+dependencies = ["mcp>=2.3"]
+license = { text = "MIT" }
+keywords = ["mcp", "csdi", "hong-kong", "gis", "open-data"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: GIS",
+]
+
+[project.scripts]
+hk-csdi-mcp = "hk_csdi_mcp:main"
+
+[tool.setuptools]
+py-modules = ["hk_csdi_mcp"]

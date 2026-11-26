@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+hk-csdi/
+tokens.json
+*.geojson
+.venv/
+dist/
+build/
