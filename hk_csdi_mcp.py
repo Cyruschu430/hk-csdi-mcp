@@ -270,6 +270,7 @@ def load_hk_data(dataset_id: str, refresh: bool = False) -> str:
             "detail": f"{len(feats)} features, but every one carries `geometry: null` — attribute-only, "
                       f"so no spatial operation can place it",
             "still_usable": "query_hk_data() and summarise_hk_data() work normally on the cached copy",
+            "download_url": CSDI_FILE.format(urllib.parse.quote(dataset_id)),
             "known": ["LandSD Building — 87,982 features, 0 geometries",
                       "LandSD Lot — 1,606 features, 0 geometries"],
         }, ensure_ascii=False)
@@ -279,6 +280,10 @@ def load_hk_data(dataset_id: str, refresh: bool = False) -> str:
         "fields": list((feats[0].get("properties") or {}).keys())[:20],
         "bbox": [round(min(lons), 5), round(min(lats), 5), round(max(lons), 5), round(max(lats), 5)],
         "cached": cached, "cached_days": round(age, 1) if cached else 0,
+        # The features stay on this side on purpose (87k-feature datasets would flood a chat).
+        # Whoever wants the file itself fetches the published one — same bytes, straight from CSDI.
+        "download_url": CSDI_FILE.format(urllib.parse.quote(dataset_id)),
+        "download_format": "GeoJSON, WGS84 / EPSG:4326 — the published export, unchanged",
         "next": "query_hk_data(dataset_id, where=...) for rows, summarise_hk_data(dataset_id, "
                 "group_by=...) for aggregates, spatial_join(points_dataset=..., polygons_dataset=...) "
                 "to count points inside polygons",
@@ -783,14 +788,19 @@ def _safe(fn):
 def _token_cli(argv) -> int:
     rows = _read_tokens()
     if "--add-token" in argv:
-        name = argv[argv.index("--add-token") + 1]
+        i = argv.index("--add-token")
+        name = argv[i + 1]
+        note = " ".join(a for a in argv[i + 2:] if not a.startswith("--")).strip()
         rows = [r for r in rows if r["name"] != name]  # re-minting replaces the old token
         token = "hkc_" + secrets.token_urlsafe(32)
-        rows.append({"name": name, "sha256": _hash(token), "enabled": True,
-                     "created": time.strftime("%Y-%m-%d")})
+        row = {"name": name, "sha256": _hash(token), "enabled": True,
+               "created": time.strftime("%Y-%m-%d")}
+        if note:
+            row["note"] = note  # who this is / why they have access
+        rows.append(row)
         _write_tokens(rows)
-        print(json.dumps({"name": name, "token": token,
-                          "note": "shown once — store it now, only the hash is kept",
+        print(json.dumps({"name": name, "token": token, "note_given": note or None,
+                          "shown_once": "store it now — only the hash is kept",
                           "client_config": {"url": "https://<host>/mcp",
                                             "headers": {"Authorization": f"Bearer {token}"}}}, indent=2))
         return 0
@@ -801,7 +811,8 @@ def _token_cli(argv) -> int:
         print(f"revoked {name}" if len(keep) != len(rows) else f"no token named {name}")
         return 0
     print(json.dumps([{"name": r["name"], "enabled": r.get("enabled", True),
-                       "created": r.get("created", "")} for r in rows], indent=2))
+                       "created": r.get("created", ""), "note": r.get("note", "")}
+                      for r in rows], indent=2))
     return 0
 
 

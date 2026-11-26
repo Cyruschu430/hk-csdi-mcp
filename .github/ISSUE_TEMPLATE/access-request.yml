@@ -1,0 +1,53 @@
+name: Access request
+description: Ask for a bearer token for the hosted hk-csdi MCP endpoint
+title: "[access] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One token per person, issued by hand. Do **not** paste a password, a token or any
+        secret into this form — it is public. You will receive the token privately.
+  - type: input
+    id: who
+    attributes:
+      label: Your name or handle
+      placeholder: e.g. Chan Tai Man / @taiman
+    validations:
+      required: true
+  - type: input
+    id: affiliation
+    attributes:
+      label: Organisation or project
+      placeholder: e.g. HKU Department of Geography / personal project
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Which MCP client will you use?
+      options:
+        - Claude Code
+        - Cursor
+        - VS Code / GitHub Copilot
+        - Claude Desktop (via mcp-remote)
+        - Other (say which below)
+    validations:
+      required: true
+  - type: textarea
+    id: use
+    attributes:
+      label: What are you building?
+      description: One or two sentences. It helps size the quota.
+      placeholder: A notebook that counts EV chargers per district council district.
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: House rules
+      options:
+        - label: I will credit the publishing government department when I quote a number, and will not present derived values as official CSDI figures.
+          required: true
+        - label: I will keep the token to myself and tell the maintainer if it leaks.
+          required: true

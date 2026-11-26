@@ -43,6 +43,16 @@ async def main() -> int:
         loaded = _payload(await client.call_tool("load_hk_data", {"dataset_id": ids[0]}))
         assert loaded.get("error") or loaded["features"] > 0, loaded
 
+        # the promise to spatial-analysis users: download_url is the real published file, and its
+        # feature count matches the summary the model quotes
+        dl = loaded["download_url"]
+        assert dl.startswith("https://portal.csdi.gov.hk/"), dl
+        import urllib.request
+        with urllib.request.urlopen(dl, timeout=120) as resp:
+            fc = json.load(resp)
+        assert fc.get("type") == "FeatureCollection", fc.get("type")
+        assert len(fc["features"]) == loaded["features"], (len(fc["features"]), loaded["features"])
+
         status = _payload(await client.call_tool("dataset_status", {"dataset_id": ids[0]}))
         assert status["checked"] == 1, status
 

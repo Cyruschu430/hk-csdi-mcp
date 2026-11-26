@@ -29,9 +29,13 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def mint(env: dict, name: str) -> str:
-    out = subprocess.run([sys.executable, str(SERVER), "--add-token", name], env=env,
-                         capture_output=True, text=True, check=True).stdout
+def mint(env: dict, name: str, note: str = "") -> str:
+    argv = [sys.executable, str(SERVER), "--add-token", name] + ([note] if note else [])
+    out = subprocess.run(argv, env=env, capture_output=True, text=True, check=True).stdout
+    register = json.loads(subprocess.run([sys.executable, str(SERVER), "--list-tokens"], env=env,
+                                         capture_output=True, text=True, check=True).stdout)
+    assert register and register[0]["name"] == name, register
+    assert register[0]["note"] == note, register  # the access register keeps who/why
     return json.loads(out)["token"]
 
 
@@ -58,7 +62,7 @@ async def main() -> int:
     env = dict(os.environ, HK_CSDI_TOKENS=f"{tmp}/tokens.json", HK_CSDI_DIR=f"{tmp}/work",
                HK_CSDI_TRANSPORT="streamable-http", HK_CSDI_RPM="2",
                HK_CSDI_LOADS_PER_HOUR="0")
-    token = mint(env, "tester")
+    token = mint(env, "tester", "ci robot")
     port = free_port()
     env["HK_CSDI_PORT"] = str(port)
     proc = subprocess.Popen([sys.executable, str(SERVER)], env=env,

@@ -30,6 +30,33 @@ the answers are the published ones, not a snapshot that rots in the repo.
 The catalogue and the GeoJSON exports are the only things downloaded; nothing is written outside
 `HK_CSDI_DIR`.
 
+## Taking data elsewhere (spatial analysis)
+
+The tools are the *finding and interpreting* layer; the geometry belongs in a file, not in a chat
+transcript — a district boundary is a few hundred KB and LandSD Building is 87,982 features, which
+no context window should absorb. So `load_hk_data` returns a summary **plus the published file's
+own URL**:
+
+```json
+{"dataset_id": "afcd_rcd_1635136427551_29173", "features": 167, "geometry": ["Point"],
+ "bbox": [113.8, 22.15, 114.44, 22.56], "download_url": "https://portal.csdi.gov.hk/csdi-webpage/file-api?dataset_id=…&format=geojson"}
+```
+
+That URL *is* the dataset — a GeoJSON `FeatureCollection` in WGS84/EPSG:4326, the same bytes this
+server caches, served by CSDI itself. Take it into whatever does the computation:
+
+```bash
+curl -s "$URL" -o toilets.geojson            # then drag into QGIS / ArcGIS Pro
+python3 -c "import geopandas as gpd; g = gpd.read_file('toilets.geojson'); print(g.crs, len(g))"
+```
+
+Inside a coding agent (Claude Code, Cursor) the model can `curl` that URL into the project and run
+the analysis in Python; inside a chat client, open the URL and save the file. Both routes keep the
+feature payload out of the model's context, which is the point.
+
+For the two questions that don't need the file at all, the server answers them directly:
+`summarise_hk_data` (counts / sums / averages per group) and `spatial_join` (points per polygon).
+
 ## Local use (stdio, no token)
 
 ```json
@@ -94,6 +121,27 @@ claude mcp add --transport http hk-csdi https://mcp.example.com/mcp \
 
 `claude.ai` web connectors and ChatGPT connectors require OAuth, which this server does not
 implement — use a client that sends headers, or run it locally over stdio.
+
+### Get access
+
+There is no self-serve signup. An endpoint that mints its own credentials is an abuse vector with
+nothing in return for a read-only data server, so tokens are issued by hand, one per person:
+
+1. open an [access request](https://github.com/Cyruschu430/hk-csdi-mcp/issues/new?template=access-request.yml)
+   (or just ask the maintainer), saying who you are and which client you use;
+2. you get one token privately, bound to your name, with the quota below;
+3. when you stop needing it, ask for a revoke — it takes effect on your next request.
+
+Never put a token in an issue, a screenshot or a shared config. Only sha256 hashes are stored, so a
+lost token is replaced, not recovered.
+
+Maintainer side:
+
+```bash
+python3 hk_csdi_mcp.py --add-token alice "HKU geography, EV notebook"   # prints the token once
+python3 hk_csdi_mcp.py --list-tokens                                    # the access register
+python3 hk_csdi_mcp.py --revoke-token alice
+```
 
 ### Abuse control
 
