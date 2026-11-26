@@ -591,10 +591,12 @@ def spatial_join(points_dataset: str, polygons_dataset: str, field: str = "", to
     prop_sets = [f.get("properties") or {} for f in polys]
 
     def _label_rank(k):
-        """Text-like, name-looking fields first. No guessing: the caller still picks one."""
+        """Human-readable fields first. No guessing of WHICH field: the caller still picks one."""
         values = {str(r.get(k)) for r in prop_sets}
         hint = bool(re.search(r"name|district|region|area|zone|label|title|_chi|_eng|^dc_", k, re.I))
-        return (all(_num(v) is not None for v in values), not hint, k)
+        # a name beats a code: "Sham Shui Po" reads better than "SK", and the first entry of
+        # label_fields is what a model reaches for
+        return (all(_num(v) is not None for v in values), not hint, "name" not in k.lower(), k)
 
     candidates = sorted(((k, len({str(r.get(k)) for r in prop_sets}))
                          for k in (prop_sets[0] if prop_sets else {})

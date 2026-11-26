@@ -21,6 +21,9 @@ jobs:
       - name: Auth, quota and revocation (no network)
         run: python test_auth.py
 
+      - name: Spatial join geometry (no network)
+        run: python test_spatial_join.py
+
       - name: Self-test (catalogue harvest, search, XML escape, quota guard)
         run: python hk_csdi_mcp.py --selftest
 

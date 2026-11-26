@@ -108,7 +108,8 @@ and stops, instead of retrying a protocol exception.
 
 Bind to `127.0.0.1` and terminate TLS in front (Caddy/nginx). The server sets no session limit of
 its own beyond the SDK defaults; one process serves every token from one cache directory, so a
-dataset downloaded by one caller is warm for the next.
+dataset downloaded by one caller is warm for the next. `deploy/` carries a systemd unit and a
+Caddy site block that already has streaming and long timeouts configured for MCP.
 
 ## Tests
 
