@@ -24,6 +24,9 @@ jobs:
       - name: Spatial join geometry (no network)
         run: python test_spatial_join.py
 
+      - name: Bounded GeoJSON slice (no network)
+        run: python test_slice.py
+
       - name: Self-test (catalogue harvest, search, XML escape, quota guard)
         run: python hk_csdi_mcp.py --selftest
 

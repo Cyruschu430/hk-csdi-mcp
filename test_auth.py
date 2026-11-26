@@ -20,7 +20,7 @@ import httpx2
 
 ROOT = pathlib.Path(__file__).resolve().parent
 SERVER = ROOT / "hk_csdi_mcp.py"
-TOOL_COUNT = 6
+TOOL_COUNT = 7
 
 
 def free_port() -> int:

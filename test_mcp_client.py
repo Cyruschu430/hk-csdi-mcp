@@ -14,7 +14,7 @@ import mcp
 
 ROOT = pathlib.Path(__file__).resolve().parent
 EXPECTED = {"search_hk_data", "load_hk_data", "dataset_status",
-            "query_hk_data", "summarise_hk_data", "spatial_join"}
+            "query_hk_data", "summarise_hk_data", "spatial_join", "slice_hk_data"}
 
 
 def _payload(result) -> dict:
@@ -52,6 +52,12 @@ async def main() -> int:
             fc = json.load(resp)
         assert fc.get("type") == "FeatureCollection", fc.get("type")
         assert len(fc["features"]) == loaded["features"], (len(fc["features"]), loaded["features"])
+
+        # the analysis path: bounded geometry inline, no second download
+        sl = _payload(await client.call_tool("slice_hk_data", {"dataset_id": ids[0], "limit": 3}))
+        assert sl["returned"] <= 3 and sl["geojson"]["features"], sl
+        assert all(f["geometry"] for f in sl["geojson"]["features"]), sl
+        assert sl["bytes"] <= 200_000, sl["bytes"]
 
         status = _payload(await client.call_tool("dataset_status", {"dataset_id": ids[0]}))
         assert status["checked"] == 1, status

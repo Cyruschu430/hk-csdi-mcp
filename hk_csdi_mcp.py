@@ -409,6 +409,122 @@ def _num(v):
         return None
 
 
+SLICE_MAX_FEATURES = 2000   # ponytail: fixed ceiling; a model analysing >2k rows in-context is already losing
+SLICE_MAX_BYTES = 200_000   # ~50k tokens of GeoJSON — a slice, not a download
+
+
+def _parse_bbox(bbox: str):
+    """"minLon,minLat,maxLon,maxLat" or a 4-item list -> tuple, else ValueError."""
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        vals = [float(v) for v in bbox]
+    else:
+        parts = [p for p in re.split(r"[,\s]+", str(bbox).strip()) if p]
+        if len(parts) != 4:
+            raise ValueError("bbox must be 4 numbers: minLon,minLat,maxLon,maxLat (WGS84)")
+        vals = [float(p) for p in parts]
+    w, s, e, n = vals
+    if not (w < e and s < n):
+        raise ValueError(f"bbox corners are inverted: {vals}")
+    if not (-180 <= w <= 180 and -180 <= e <= 180 and -90 <= s <= 90 and -90 <= n <= 90):
+        raise ValueError(f"bbox outside WGS84 range: {vals}")
+    return w, s, e, n
+
+
+def slice_hk_data(dataset_id: str, bbox: str = "", where: str = "", fields: str = "",
+                  limit: int = 200) -> str:
+    """Return a BOUNDED GeoJSON FeatureCollection — real geometry, ready to analyse now.
+
+    Use this when the analysis needs the coordinates, not just a count: filter to a bbox
+    ("minLon,minLat,maxLon,maxLat") and/or a `where` clause (FIELD=value, or free text), and up to
+    `limit` features come back inline with their geometry. Capped at 2,000 features / ~200 KB;
+    `truncated: true` means narrow the filter or use download_url for the whole file.
+
+    Datasets whose features carry no geometry are refused here (an attribute-only dataset cannot be
+    mapped or joined) — the refusal names that, instead of returning empty shells.
+    """
+    feats, err = _cached_features(dataset_id)
+    if err:
+        return json.dumps(err, ensure_ascii=False)
+    if not feats:
+        return json.dumps({"error": f"{dataset_id}: no features"})
+    try:
+        cap = max(1, min(int(limit), SLICE_MAX_FEATURES))
+    except (TypeError, ValueError):
+        cap = 200
+
+    box = None
+    if str(bbox).strip():
+        try:
+            box = _parse_bbox(bbox)
+        except ValueError as e:
+            return json.dumps({"error": f"bbox: {e}", "expected": "minLon,minLat,maxLon,maxLat"}, ensure_ascii=False)
+
+    field_list = [k for k in ((feats[0].get("properties") or {})) if not k.startswith("__")]
+    cond = (where or "").strip()
+    field_name, needle = "", cond.lower()
+    if "=" in cond:
+        field_name, _, needle = [s.strip() for s in cond.partition("=")]
+        if field_name not in field_list:
+            return json.dumps({"error": f"{dataset_id}: no field {field_name!r}", "fields": field_list[:25]},
+                              ensure_ascii=False)
+        needle = needle.lower()
+    keep = [s.strip() for s in fields.split(",") if s.strip()]
+
+    matched = kept = 0
+    no_geometry = truncated = 0
+    out, size = [], 0
+    for f in feats:
+        props = f.get("properties") or {}
+        if field_name:
+            if needle not in str(props.get(field_name) or "").lower():
+                continue
+        elif cond and not any(needle in str(v).lower() for v in props.values() if v is not None):
+            continue
+        if box:
+            coords = [(x, y) for x, y in _coords(f.get("geometry") or {})]
+            if not coords:
+                no_geometry += 1
+                continue
+            if not any(box[0] <= x <= box[2] and box[1] <= y <= box[3] for x, y in coords):
+                continue
+        elif (f.get("geometry") or {}).get("coordinates") is None:
+            no_geometry += 1
+            continue
+        matched += 1
+        if len(out) >= cap:
+            truncated += 1
+            continue
+        picked = {k: v for k, v in props.items() if not k.startswith("__") and (not keep or k in keep)}
+        feature = {"type": "Feature", "geometry": f["geometry"], "properties": picked}
+        blob = json.dumps(feature, ensure_ascii=False)
+        if size + len(blob) > SLICE_MAX_BYTES and out:
+            truncated += 1
+            continue
+        out.append(feature)
+        size += len(blob)
+        kept += 1
+
+    if not out:
+        reason = (f"{no_geometry} matching features carry no geometry (attribute-only dataset)"
+                  if no_geometry else "nothing matched the bbox/where filter")
+        return json.dumps({
+            "dataset_id": dataset_id, "returned": 0, "matched": matched, "no_geometry": no_geometry,
+            "error": reason,
+            "next": "drop or widen the bbox/where filter, or use query_hk_data / summarise_hk_data "
+                    "for the attributes without geometry",
+        }, ensure_ascii=False)
+    return json.dumps({
+        "dataset_id": dataset_id, "matched": matched, "returned": kept,
+        "truncated": truncated > 0,
+        "limits": {"features": cap, "bytes": SLICE_MAX_BYTES},
+        "bytes": size, "crs": "EPSG:4326",
+        "geojson": {"type": "FeatureCollection", "features": out},
+        "note": "a slice, not the dataset — download_url from load_hk_data has every feature",
+        "next": "analyse these features directly (plot, buffer, join, export), or narrow bbox/where "
+                "for a different slice",
+    }, ensure_ascii=False)
+
+
 def query_hk_data(dataset_id: str, where: str = "", fields: str = "", limit: int = 5) -> str:
     """Read a FEW individual features, so a single value can be verified without dumping a dataset.
 
@@ -677,7 +793,11 @@ def spatial_join(points_dataset: str, polygons_dataset: str, field: str = "", to
 # ---------------------------------------------------------------- tokens + quota
 
 TOOLS = (search_hk_data, load_hk_data, dataset_status, query_hk_data,
-         summarise_hk_data, spatial_join)
+         summarise_hk_data, spatial_join, slice_hk_data)
+
+# These pull a dataset from CSDI when it is not cached, so the hourly download budget counts them.
+# slice_hk_data is here on purpose: without it a caller could dodge the budget by slicing instead.
+_DOWNLOAD_TOOLS = ("load_hk_data", "slice_hk_data")
 
 
 def _read_tokens() -> list:
@@ -751,14 +871,14 @@ class Quota:
             return _tool_error(f"rate limit: {self.rpm} requests/min for token {who!r}. "
                                f"Retry in {int(61 - (now - hits[0]))}s, or ask for a higher quota.")
         hits.append(now)
-        if self.loads_per_hour and (ctx.params or {}).get("name") == "load_hk_data":
+        if self.loads_per_hour and (ctx.params or {}).get("name") in _DOWNLOAD_TOOLS:
             loads = self.loads[who]
             while loads and now - loads[0] > 3600:
                 loads.popleft()
             if len(loads) >= self.loads_per_hour:
-                return _tool_error(f"download budget: {self.loads_per_hour} load_hk_data calls/hour "
+                return _tool_error(f"download budget: {self.loads_per_hour} dataset downloads/hour "
                                    f"for token {who!r}. Datasets already cached still work through "
-                                   f"query_hk_data / summarise_hk_data.")
+                                   f"query_hk_data / summarise_hk_data / slice_hk_data.")
             loads.append(now)
         return await call_next(ctx)
 

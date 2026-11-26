@@ -10,7 +10,7 @@ Runs two ways from the same code:
 - **remotely over streamable HTTP** — one bearer token per person, revocable, rate-limited.
 
 ```
-tools   6        runtime deps   1 (mcp)        datasets   1,166 (live CSDI catalogue)
+tools   7        runtime deps   1 (mcp)        datasets   1,166 (live CSDI catalogue)
 ```
 
 The data is not bundled: every call reads `portal.csdi.gov.hk` and caches the response locally, so
@@ -26,6 +26,7 @@ the answers are the published ones, not a snapshot that rots in the repo.
 | `query_hk_data` | a few individual rows (`where="FIELD=value"` or free text), capped at 20, so a single value can be checked. |
 | `summarise_hk_data` | counts / sums / averages per group, as an aligned text table plus the same rows as data. Group by district, call it once to discover which fields are worth grouping. |
 | `spatial_join` | points-in-polygons in pure Python — "which district has the most of these" — no geometry service, no credential. |
+| `slice_hk_data` | **the analysis hand-off**: a bbox/attribute-filtered GeoJSON `FeatureCollection` inline (capped at 2,000 features / 200 KB), so the coordinates reach the model or the script without a second download. `truncated: true` means narrow the filter. |
 
 The catalogue and the GeoJSON exports are the only things downloaded; nothing is written outside
 `HK_CSDI_DIR`.
@@ -54,8 +55,17 @@ Inside a coding agent (Claude Code, Cursor) the model can `curl` that URL into t
 the analysis in Python; inside a chat client, open the URL and save the file. Both routes keep the
 feature payload out of the model's context, which is the point.
 
-For the two questions that don't need the file at all, the server answers them directly:
-`summarise_hk_data` (counts / sums / averages per group) and `spatial_join` (points per polygon).
+When the analysis happens *inside* the conversation, don't download at all — ask for a slice:
+
+```text
+slice_hk_data(dataset_id="afcd_rcd_1635136427551_29173", bbox="114.10,22.30,114.20,22.40", limit=150)
+```
+
+That returns real geometry (EPSG:4326) for the matching features, capped at 2,000 features / 200 KB,
+with `matched` and `truncated` telling you whether the filter is too wide. It is a slice for
+plotting, joining or handing to a script — `download_url` stays the route for the full file. Two
+other tools answer without any geometry at all: `summarise_hk_data` (counts / sums / averages per
+group) and `spatial_join` (points per polygon).
 
 ## Local use (stdio, no token)
 
