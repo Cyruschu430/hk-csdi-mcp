@@ -828,9 +828,17 @@ def _selftest() -> int:
     results = [asyncio.run(call(q, Ctx())) for _ in range(3)]
     assert not any(r.get("isError") for r in results[:2]), results
     assert results[2].get("isError"), "rpm guard did not fire"
-    assert Quota(rpm=0).rpm == 0
+
+    class LoadCtx:
+        method = "tools/call"
+        params = {"name": "load_hk_data"}
+
+    ql = Quota(rpm=0, loads_per_hour=1)
+    loads = [asyncio.run(call(ql, LoadCtx())) for _ in range(2)]
+    assert not loads[0].get("isError"), loads
+    assert loads[1].get("isError"), "download budget did not fire"
     print(json.dumps({"catalogue": len(cat), "search_hits": len(hits),
-                      "rpm_guard": "ok", "xml_escape": "ok"}))
+                      "rpm_guard": "ok", "loads_guard": "ok", "xml_escape": "ok"}))
     return 0
 
 
