@@ -1026,6 +1026,12 @@ def main() -> None:
     allowed = [h.strip() for h in (os.environ.get("HK_CSDI_ALLOWED_HOSTS") or "").split(",") if h.strip()]
     allowed += [h for h in (netloc, f"127.0.0.1:{port}", f"localhost:{port}") if h]
     server.run("streamable-http", host=host, port=port, streamable_http_path=path,
+               # Stateless by default: these tools are pure request/response, and a client that
+               # drops the Mcp-Session-Id header otherwise gets a 400 on its second call. No
+               # server-initiated messages are used, so nothing is lost; set HK_CSDI_STATELESS=0
+               # if a client needs session resumption.
+               stateless_http=(os.environ.get("HK_CSDI_STATELESS") or "1").strip().lower()
+               not in ("0", "false", "off", "no"),
                transport_security=TransportSecuritySettings(
                    enable_dns_rebinding_protection=True,
                    allowed_hosts=list(dict.fromkeys(allowed))))
