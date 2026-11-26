@@ -30,6 +30,7 @@ import collections
 import hashlib
 import hmac
 import json
+import logging
 import os
 import pathlib
 import re
@@ -40,6 +41,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from xml.sax.saxutils import escape as _xml_escape
+
+_log = logging.getLogger("hk-csdi")
 
 CSDI_CSW = "https://portal.csdi.gov.hk/geoportal/csw"
 CSDI_FILE = "https://portal.csdi.gov.hk/csdi-webpage/file-api?dataset_id={}&format=geojson"
@@ -883,6 +886,22 @@ class Quota:
         return await call_next(ctx)
 
 
+class Trace:
+    """One line per connection and per tool call in the journal — enough to answer "did client X
+    actually reach us?" without logging arguments or tokens."""
+
+    async def __call__(self, ctx, call_next):
+        try:
+            if ctx.method == "initialize":
+                ci = (ctx.params or {}).get("clientInfo") or {}
+                _log.info("connect client=%s/%s", ci.get("name") or "?", ci.get("version") or "?")
+            elif ctx.method == "tools/call":
+                _log.info("call tool=%s", (ctx.params or {}).get("name"))
+        except Exception:  # logging must never break a request
+            pass
+        return await call_next(ctx)
+
+
 def _tool_error(text: str) -> dict:
     return {"content": [{"type": "text", "text": json.dumps({"error": text}, ensure_ascii=False)}],
             "isError": True}
@@ -986,6 +1005,7 @@ def main() -> None:
     port = int(os.environ.get("HK_CSDI_PORT") or 8788)
     path = os.environ.get("HK_CSDI_PATH") or "/mcp"
 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     from mcp.server.auth.settings import AuthSettings
     from mcp.server.mcpserver import MCPServer
 
@@ -1007,7 +1027,7 @@ def main() -> None:
         token_verifier=StaticTokenVerifier(TOKENS) if transport != "stdio" else None,
         auth=AuthSettings(issuer_url=public, resource_server_url=public,
                           validate_token_resource=False) if transport != "stdio" else None,
-        middleware=[Quota()] if transport != "stdio" else [],
+        middleware=[Trace(), Quota()] if transport != "stdio" else [],
     )
     for fn in TOOLS:
         server.tool()(_safe(fn))
