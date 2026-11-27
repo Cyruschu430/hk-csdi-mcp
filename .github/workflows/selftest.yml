@@ -30,6 +30,9 @@ jobs:
       - name: ArcGIS FeatureServer resolver (no network)
         run: python test_arcgis_service.py
 
+      - name: Filtered service query (no network)
+        run: python test_arcgis_query.py
+
       - name: Self-test (catalogue harvest, search, XML escape, quota guard)
         run: python hk_csdi_mcp.py --selftest
 

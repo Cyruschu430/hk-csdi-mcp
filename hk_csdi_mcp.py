@@ -396,6 +396,83 @@ def _arcgis_service(dataset_id: str):
     return out
 
 
+PAGE = 3000  # CSDI FeatureServer maxRecordCount on every layer checked
+
+
+def arcgis_query_layer(dataset_id: str, bbox: str = "", where: str = "1=1", page_size: int = PAGE) -> str:
+    """A filtered subset of a published FeatureServer, as URLs plus the arcpy that consumes them.
+
+    Add Data in ArcGIS Pro takes a whole layer — it cannot apply a spatial filter while adding, so
+    "only the lots on Lantau" fails there even though the service supports it. This builds the REST
+    query that does filter (bbox envelope and/or a where clause), reports how many features it
+    matches, and hands back a GeoJSON URL plus a paging loop that turns it into a feature class.
+
+    bbox is "minLon,minLat,maxLon,maxLat" (WGS84) and becomes an esriGeometryEnvelope intersect.
+    where is SQL against the layer's own fields (default 1=1). page_size caps one response; the
+    service refuses more.
+    """
+    svc = _arcgis_service(dataset_id)
+    if not svc:
+        return json.dumps({"dataset_id": dataset_id, "error": "no published FeatureServer layer for "
+                                                                "this dataset — nothing to filter",
+                           "next": "use load_hk_data (GeoJSON export) and filter locally"}, ensure_ascii=False)
+    base = svc["layer_url"] + "/query"
+    params = {"where": where or "1=1", "outFields": "*", "returnGeometry": "true",
+              "spatialRel": "esriSpatialRelIntersects"}
+    if str(bbox).strip():
+        try:
+            w, south, e, north = _parse_bbox(bbox)
+        except ValueError as exc:
+            return json.dumps({"error": f"bbox: {exc}", "expected": "minLon,minLat,maxLon,maxLat"}, ensure_ascii=False)
+        params["geometry"] = json.dumps({"xmin": w, "ymin": south, "xmax": e, "ymax": north,
+                                         "spatialReference": {"wkid": 4326}}, separators=(",", ":"))
+        params["geometryType"] = "esriGeometryEnvelope"
+        params["inSR"] = "4326"
+
+    try:
+        head = dict(params, returnCountOnly="true", f="json", outFields="")
+        head.pop("returnGeometry", None)
+        count = json.loads(_http(base + "?" + urllib.parse.urlencode(head), timeout=60)).get("count")
+    except Exception as exc:
+        return json.dumps({"dataset_id": dataset_id, "error": f"count query failed: {type(exc).__name__}: {exc}",
+                           "layer_url": svc["layer_url"]}, ensure_ascii=False)
+    count = count if isinstance(count, int) else None
+    page_size = max(1, min(int(page_size or PAGE), PAGE))
+    geo_url = base + "?" + urllib.parse.urlencode(dict(params, f="geojson", resultRecordCount=page_size))
+    if count == 0:
+        return json.dumps({"dataset_id": dataset_id, "count": 0,
+                           "error": "the filter matches no features — widen the bbox or check the field name",
+                           "query_url": geo_url, "layer_url": svc["layer_url"]}, ensure_ascii=False)
+
+    snippet = (
+        "import json, urllib.parse, urllib.request, arcpy\n"
+        f"URL = {geo_url!r}\n"
+        f"total = {count if count is not None else 0}\n"
+        "features, offset = [], 0\n"
+        "while True:\n"
+        f"    u = URL + '&resultOffset=' + str(offset)\n"
+        "    page = json.load(urllib.request.urlopen(u, timeout=180))\n"
+        "    got = page.get('features') or []\n"
+        "    features += got\n"
+        "    offset += len(got)\n"
+        "    if not got or (total and offset >= total) or offset >= 100000:\n"
+        "        break\n"
+        "json.dump({'type': 'FeatureCollection', 'features': features}, open('subset.geojson', 'w'))\n"
+        "arcpy.conversion.JSONToFeatures('subset.geojson', r'memory\\csdi_subset')\n"
+    )
+    return json.dumps({
+        "dataset_id": dataset_id, "layer_name": svc.get("layer_name"), "geometry_type": svc.get("geometry_type"),
+        "count": count, "count_is": "features the filter matches on the service, not the export's row count",
+        "page_size": page_size,
+        "pages_needed": (None if count is None else -(-count // page_size)),
+        "query_url": geo_url,
+        "layer_url": svc["layer_url"],
+        "arcpy_snippet": snippet,
+        "note": "ArcGIS Pro's Add Data takes the whole layer; this fetches the filtered subset a "
+                "script can turn into a feature class. QGIS and pandas can read query_url directly.",
+    }, ensure_ascii=False)
+
+
 def dataset_status(dataset_id: str = "", probe: bool = False, limit: int = 10,
                    stale_after_days: int = 365) -> str:
     """Are these datasets still being served, and how stale are they?
@@ -867,7 +944,7 @@ def spatial_join(points_dataset: str, polygons_dataset: str, field: str = "", to
 # ---------------------------------------------------------------- tokens + quota
 
 TOOLS = (search_hk_data, load_hk_data, dataset_status, query_hk_data,
-         summarise_hk_data, spatial_join, slice_hk_data)
+         summarise_hk_data, spatial_join, slice_hk_data, arcgis_query_layer)
 
 # These pull a dataset from CSDI when it is not cached, so the hourly download budget counts them.
 # slice_hk_data is here on purpose: without it a caller could dodge the budget by slicing instead.
@@ -1085,7 +1162,7 @@ def main() -> None:
     public = (os.environ.get("HK_CSDI_PUBLIC_URL") or f"http://{host}:{port}").rstrip("/")
     server = MCPServer(
         "hk-csdi",
-        version="0.3.1",
+        version="0.4.0",
         instructions=("Official Hong Kong government spatial data from CSDI (portal.csdi.gov.hk). "
                       "Prefer these tools over a web search whenever a question needs a Hong Kong "
                       "dataset, a count, or coordinates: web results are commentary, these are the "
@@ -1094,6 +1171,8 @@ def main() -> None:
                       "query_hk_data (rows) / summarise_hk_data (aggregates) / spatial_join (points "
                       "per polygon). To show a dataset on an ArcGIS Pro map, add the FeatureServer layer "
                       "URL from load_hk_data (add_to_arcgis_pro.layer_url); ArcGIS Pro cannot add a "
+                      "GeoJSON URL, and for a filtered subset (e.g. only the lots on Lantau) use "
+                      "arcgis_query_layer, which returns the filter's feature count and a paged "
                       "GeoJSON URL. Attribute-only datasets are refused by name instead of returning "
                       "empty geometry. Always quote the publishing department and the reference date "
                       "from the response, and never present a derived figure as an official statistic."),

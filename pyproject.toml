@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hk-csdi-mcp"
-version = "0.3.1"
+version = "0.4.0"
 description = "MCP server for Hong Kong CSDI spatial data: search 1,150+ official datasets, read rows, aggregate, spatial join — local or remote with bearer tokens"
 requires-python = ">=3.10"
 dependencies = ["mcp>=2.3"]

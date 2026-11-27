@@ -10,7 +10,7 @@ Runs two ways from the same code:
 - **remotely over streamable HTTP** — one bearer token per person, revocable, rate-limited.
 
 ```
-tools   7        runtime deps   1 (mcp)        datasets   1,166 (live CSDI catalogue)
+tools   8        runtime deps   1 (mcp)        datasets   1,166 (live CSDI catalogue)
 ```
 
 The data is not bundled: every call reads `portal.csdi.gov.hk` and caches the response locally, so
@@ -26,6 +26,7 @@ the answers are the published ones, not a snapshot that rots in the repo.
 | `query_hk_data` | a few individual rows (`where="FIELD=value"` or free text), capped at 20, so a single value can be checked. |
 | `summarise_hk_data` | counts / sums / averages per group, as an aligned text table plus the same rows as data. Group by district, call it once to discover which fields are worth grouping. |
 | `spatial_join` | points-in-polygons in pure Python — "which district has the most of these" — no geometry service, no credential. |
+| `arcgis_query_layer` | a **filtered** subset of a published FeatureServer (bbox envelope and/or SQL `where`): the matching feature count, a paged `f=geojson` URL, and the arcpy loop that turns it into a feature class. Add Data in Pro takes the whole layer and cannot filter while adding — this is the path for "only the lots on Lantau". |
 | `slice_hk_data` | **the analysis hand-off**: a bbox/attribute-filtered GeoJSON `FeatureCollection` inline (capped at 2,000 features / 200 KB), so the coordinates reach the model or the script without a second download. `truncated: true` means narrow the filter. |
 
 The catalogue and the GeoJSON exports are the only things downloaded; nothing is written outside
@@ -81,6 +82,18 @@ arcpy.conversion.JSONToFeatures("slice.geojson", r"memory\csdi_slice", geometry_
 
 Field names are the published ones, so the column `summarise_hk_data` groups by is the same column
 in the attribute table.
+
+Adding the whole layer is wrong when the question is spatial ("only the lots on Lantau"): Add Data
+cannot filter while adding, and the Lot layer is 375,193 polygons. `arcgis_query_layer` builds the
+service query instead — the same envelope, measured live:
+
+```text
+arcgis_query_layer(dataset_id="landsd_rcd_1637217253134_22729", bbox="113.82,22.19,114.06,22.32")
+→ count 28,176 · page_size 3,000 · pages_needed 10 · query_url (f=geojson) · arcpy_snippet
+```
+
+The service caps a response at 3,000 features, so the snippet pages with `resultOffset`; that is
+CSDI's limit, not ours. QGIS and pandas can read `query_url` directly.
 
 When the analysis happens *inside* the conversation, don't download at all — ask for a slice:
 

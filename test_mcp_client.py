@@ -14,7 +14,8 @@ import mcp
 
 ROOT = pathlib.Path(__file__).resolve().parent
 EXPECTED = {"search_hk_data", "load_hk_data", "dataset_status",
-            "query_hk_data", "summarise_hk_data", "spatial_join", "slice_hk_data"}
+            "query_hk_data", "summarise_hk_data", "spatial_join", "slice_hk_data",
+            "arcgis_query_layer"}
 
 
 def _payload(result) -> dict:
@@ -70,6 +71,13 @@ async def main() -> int:
         svc = lot["add_to_arcgis_pro"]
         assert svc["layer_url"].endswith("/FeatureServer/0") and svc["geometry_type"] == "esriGeometryPolygon", svc
         assert svc["feature_count"] > 1000, svc
+
+        # Add Data takes a whole layer; a spatial filter needs the service query
+        q = _payload(await client.call_tool("arcgis_query_layer",
+                                           {"dataset_id": "landsd_rcd_1637217253134_22729",
+                                            "bbox": "113.82,22.19,114.06,22.32"}))
+        assert q["count"] > 1000 and q["pages_needed"] >= 1, q
+        assert "esriGeometryEnvelope" in q["query_url"], q["query_url"]
 
         status = _payload(await client.call_tool("dataset_status", {"dataset_id": ids[0]}))
         assert status["checked"] == 1, status
