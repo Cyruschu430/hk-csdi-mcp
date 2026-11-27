@@ -67,8 +67,11 @@ CSDI publishes every spatial dataset as a public FeatureServer.
 }
 ```
 
-Add Data → ArcGIS Server / Feature Service → paste the URL. The field is absent for attribute-only
-datasets (CSDI publishes no layer for them). For a *filtered* subset, take the `slice_hk_data`
+Add Data → ArcGIS Server / Feature Service → paste the URL. `feature_count` is the service's own
+count and it is often **not** the export's row count — LandSD "Lot" is 1,606 attribute-only rows in
+the GeoJSON and 375,193 polygons in the service, so an attribute-only export is not the end of the
+story: `load_hk_data` resolves the layer that does carry geometry and says so. The field is absent
+only when CSDI publishes no layer at all. For a *filtered* subset, take the `slice_hk_data`
 GeoJSON into a feature class:
 
 ```python

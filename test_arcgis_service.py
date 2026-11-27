@@ -19,6 +19,8 @@ calls = {"n": 0}
 
 def fake_http(url, data=None, headers=None, timeout=60):
     calls["n"] += 1
+    if "/query" in url:                      # the service's own feature count
+        return json.dumps({"count": 375193}).encode()
     return json.dumps(SERVICE).encode()
 
 
@@ -28,6 +30,7 @@ r = m._arcgis_service(DID)
 assert r["layer_url"].endswith("/FeatureServer/0"), r
 assert r["layer_name"] == "FireStations" and r["geometry_type"] == "esriGeometryPoint", r
 assert "ArcGIS Pro cannot add a GeoJSON URL" in r["note"], r
+assert r["feature_count"] == 375193, r          # export rows and service features are different populations
 
 # second call is served from the sidecar cache, not the network
 before = calls["n"]
@@ -36,6 +39,7 @@ assert m._arcgis_service(DID)["layer_url"] == r["layer_url"] and calls["n"] == b
 
 # a service with no feature layers -> None, and the miss is cached for a day only
 m._http = lambda *a, **k: json.dumps({"layers": [{"id": 0, "name": "T", "geometryType": None}]}).encode()
+# a count that never answers must not lose the layer_url
 assert m._arcgis_service("landsd_rcd_1637904048516_16940") is None
 
 

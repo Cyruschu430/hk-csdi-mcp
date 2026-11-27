@@ -272,15 +272,28 @@ def load_hk_data(dataset_id: str, refresh: bool = False) -> str:
     # `features` looks healthy while nothing can be placed. LandSD "Building" is
     # 87,982 features / 0 geometries (verified live 2026-11-05), "Lot" 1,606 / 0.
     if not lons:
-        return json.dumps({
+        svc = _arcgis_service(dataset_id)
+        out = {
             "dataset_id": dataset_id, "features": len(feats), "geometry": ["none"],
-            "detail": f"{len(feats)} features, but every one carries `geometry: null` — attribute-only, "
-                      f"so no spatial operation can place it",
-            "still_usable": "query_hk_data() and summarise_hk_data() work normally on the cached copy",
+            "detail": f"the GeoJSON export is attribute-only: {len(feats)} records, every one "
+                      f"carries `geometry: null`, so no spatial tool can place it",
+            "still_usable": "query_hk_data() and summarise_hk_data() read the attributes fine",
             "download_url": CSDI_FILE.format(urllib.parse.quote(dataset_id)),
-            "known": ["LandSD Building — 87,982 features, 0 geometries",
-                      "LandSD Lot — 1,606 features, 0 geometries"],
-        }, ensure_ascii=False)
+            "known": ["LandSD Building — attribute-only export, polygons on the FeatureServer",
+                      "LandSD Lot — attribute-only export, polygons on the FeatureServer"],
+        }
+        if svc:  # the service often carries the geometry the export lacks
+            out["add_to_arcgis_pro"] = svc
+            count = f" ({svc['feature_count']:,} features)" if svc.get("feature_count") else ""
+            out["error"] = (f"{dataset_id}: the GeoJSON export has no geometry, but the published "
+                            f"FeatureServer layer {svc.get('layer_name')!r} is "
+                            f"{svc.get('geometry_type')}{count} — add that layer, not the file")
+        else:
+            out["error"] = (f"{dataset_id}: attribute-only export and no published FeatureServer layer "
+                            f"— nothing to place on a map")
+        out["next"] = ("use add_to_arcgis_pro.layer_url for the map, and query_hk_data / "
+                       "summarise_hk_data for the attributes")
+        return json.dumps(out, ensure_ascii=False)
     out = {
         "dataset_id": dataset_id, "features": len(feats),
         "geometry": sorted({(f.get("geometry") or {}).get("type") or "?" for f in feats}),
@@ -361,12 +374,22 @@ def _arcgis_service(dataset_id: str):
         meta = json.loads(_http(base + "?f=json", timeout=20))
         layers = [l for l in (meta.get("layers") or []) if l.get("geometryType")]
         if layers:
-            out = {"layer_url": f"{base}/{layers[0]['id']}",
+            url = f"{base}/{layers[0]['id']}"
+            out = {"layer_url": url,
                    "layer_name": layers[0].get("name"),
                    "geometry_type": layers[0].get("geometryType"),
                    "service": "ArcGIS FeatureServer (public, no token)",
                    "note": "Add Data > ArcGIS Server / Feature Service. ArcGIS Pro cannot add a "
                            "GeoJSON URL as a service."}
+            # The GeoJSON export and the service are not the same population: LandSD "Lot" is 1,606
+            # attribute-only rows in the export and 375,193 polygons in the service. A model that
+            # quotes one for the other is wrong, so carry the service's own count.
+            try:
+                cnt = json.loads(_http(url + "/query?where=1%3D1&returnCountOnly=true&f=json", timeout=20))
+                if isinstance(cnt.get("count"), int):
+                    out["feature_count"] = cnt["count"]
+            except Exception:
+                pass
     except Exception:
         out = None
     _save(cache, json.dumps(out or {}))
@@ -1062,7 +1085,7 @@ def main() -> None:
     public = (os.environ.get("HK_CSDI_PUBLIC_URL") or f"http://{host}:{port}").rstrip("/")
     server = MCPServer(
         "hk-csdi",
-        version="0.3.0",
+        version="0.3.1",
         instructions=("Official Hong Kong government spatial data from CSDI (portal.csdi.gov.hk). "
                       "Prefer these tools over a web search whenever a question needs a Hong Kong "
                       "dataset, a count, or coordinates: web results are commentary, these are the "

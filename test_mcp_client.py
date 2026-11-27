@@ -64,6 +64,13 @@ async def main() -> int:
         assert fs.get("features", 0) > 0, fs
         assert fs["add_to_arcgis_pro"]["layer_url"].endswith("/FeatureServer/0"), fs.get("add_to_arcgis_pro")
 
+        # attribute-only export, polygons on the service: report the layer, not a dead end
+        lot = _payload(await client.call_tool("load_hk_data", {"dataset_id": "landsd_rcd_1637217253134_22729"}))
+        assert lot.get("error") and lot["geometry"] == ["none"], lot
+        svc = lot["add_to_arcgis_pro"]
+        assert svc["layer_url"].endswith("/FeatureServer/0") and svc["geometry_type"] == "esriGeometryPolygon", svc
+        assert svc["feature_count"] > 1000, svc
+
         status = _payload(await client.call_tool("dataset_status", {"dataset_id": ids[0]}))
         assert status["checked"] == 1, status
 
