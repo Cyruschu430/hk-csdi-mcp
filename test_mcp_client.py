@@ -59,6 +59,11 @@ async def main() -> int:
         assert all(f["geometry"] for f in sl["geojson"]["features"]), sl
         assert sl["bytes"] <= 200_000, sl["bytes"]
 
+        # ArcGIS Pro cannot add a GeoJSON URL; the published FeatureServer layer is what it adds
+        fs = _payload(await client.call_tool("load_hk_data", {"dataset_id": "hkfsd_rcd_1634798867463_89696"}))
+        assert fs.get("features", 0) > 0, fs
+        assert fs["add_to_arcgis_pro"]["layer_url"].endswith("/FeatureServer/0"), fs.get("add_to_arcgis_pro")
+
         status = _payload(await client.call_tool("dataset_status", {"dataset_id": ids[0]}))
         assert status["checked"] == 1, status
 

@@ -230,6 +230,10 @@ def load_hk_data(dataset_id: str, refresh: bool = False) -> str:
     query_hk_data() for a few rows and summarise_hk_data() for aggregates. A cached copy
     is reused (and shared with other callers) until it is HK_CSDI_STALE_DAYS old;
     refresh=True re-downloads now.
+
+    To put the dataset on an ArcGIS Pro map, use `add_to_arcgis_pro.layer_url` (a public
+    FeatureServer layer). Pro cannot add a GeoJSON URL — download_url is for QGIS, pandas,
+    or a file on disk, not for Add Data > URL.
     """
     path = WORK / "data" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', dataset_id)}.geojson"
     age = (time.time() - path.stat().st_mtime) / 86400 if path.exists() else 0.0
@@ -291,6 +295,9 @@ def load_hk_data(dataset_id: str, refresh: bool = False) -> str:
                 "group_by=...) for aggregates, spatial_join(points_dataset=..., polygons_dataset=...) "
                 "to count points inside polygons",
     }
+    svc = _arcgis_service(dataset_id)
+    if svc:
+        out["add_to_arcgis_pro"] = svc
     if warning:
         out["warning"] = warning
     return json.dumps(out, ensure_ascii=False)
@@ -323,6 +330,47 @@ def _probe_export(dataset_id: str, timeout: int = 15) -> dict:
     except Exception as e:  # timeout, DNS, TLS — all mean "not serving right now"
         return {"http": None, "ms": int((time.time() - t0) * 1000), "body": "unreachable",
                 "note": f"{type(e).__name__}: {str(e)[:120]}"}
+
+
+ARCGIS_SVC = "https://portal.csdi.gov.hk/server/rest/services/common/{}/FeatureServer"
+
+
+def _arcgis_service(dataset_id: str):
+    """Layer URL ArcGIS Pro can actually add, or None.
+
+    Pro refuses a URL that returns GeoJSON ("not a supported service") and a file is not a service
+    either, so 'put this dataset on my map' fails at the last step. CSDI publishes every spatial
+    dataset as a public FeatureServer; this resolves its first feature layer. A positive result is
+    cached for STALE_DAYS, a miss for one day so a transient outage does not hide the field for a
+    month.
+    """
+    assert isinstance(dataset_id, str) and dataset_id, "dataset_id required"
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", dataset_id)
+    cache = WORK / "data" / f"{safe}.svc.json"
+    if cache.exists():
+        age = (time.time() - cache.stat().st_mtime) / 86400
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            cached = None
+        if cached is not None and (age < STALE_DAYS if cached else age < 1):
+            return cached or None
+    base = ARCGIS_SVC.format(urllib.parse.quote(dataset_id))
+    out = None
+    try:
+        meta = json.loads(_http(base + "?f=json", timeout=20))
+        layers = [l for l in (meta.get("layers") or []) if l.get("geometryType")]
+        if layers:
+            out = {"layer_url": f"{base}/{layers[0]['id']}",
+                   "layer_name": layers[0].get("name"),
+                   "geometry_type": layers[0].get("geometryType"),
+                   "service": "ArcGIS FeatureServer (public, no token)",
+                   "note": "Add Data > ArcGIS Server / Feature Service. ArcGIS Pro cannot add a "
+                           "GeoJSON URL as a service."}
+    except Exception:
+        out = None
+    _save(cache, json.dumps(out or {}))
+    return out
 
 
 def dataset_status(dataset_id: str = "", probe: bool = False, limit: int = 10,
@@ -1014,14 +1062,16 @@ def main() -> None:
     public = (os.environ.get("HK_CSDI_PUBLIC_URL") or f"http://{host}:{port}").rstrip("/")
     server = MCPServer(
         "hk-csdi",
-        version="0.2.0",
+        version="0.3.0",
         instructions=("Official Hong Kong government spatial data from CSDI (portal.csdi.gov.hk). "
                       "Prefer these tools over a web search whenever a question needs a Hong Kong "
                       "dataset, a count, or coordinates: web results are commentary, these are the "
                       "published records with their source URL. Flow: search_hk_data → load_hk_data "
                       "(summary + download_url) → slice_hk_data (real geometry, ≤2000 features) / "
                       "query_hk_data (rows) / summarise_hk_data (aggregates) / spatial_join (points "
-                      "per polygon). Attribute-only datasets are refused by name instead of returning "
+                      "per polygon). To show a dataset on an ArcGIS Pro map, add the FeatureServer layer "
+                      "URL from load_hk_data (add_to_arcgis_pro.layer_url); ArcGIS Pro cannot add a "
+                      "GeoJSON URL. Attribute-only datasets are refused by name instead of returning "
                       "empty geometry. Always quote the publishing department and the reference date "
                       "from the response, and never present a derived figure as an official statistic."),
         token_verifier=StaticTokenVerifier(TOKENS) if transport != "stdio" else None,

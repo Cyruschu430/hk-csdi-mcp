@@ -27,6 +27,9 @@ jobs:
       - name: Bounded GeoJSON slice (no network)
         run: python test_slice.py
 
+      - name: ArcGIS FeatureServer resolver (no network)
+        run: python test_arcgis_service.py
+
       - name: Self-test (catalogue harvest, search, XML escape, quota guard)
         run: python hk_csdi_mcp.py --selftest
 
